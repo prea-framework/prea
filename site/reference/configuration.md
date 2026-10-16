@@ -53,7 +53,7 @@ The connection pool is sized in the URL: `?pool_max_conns=20`. The default is 4 
 
 | Key | Default | What it does |
 |---|---|---|
-| `security.jwt.secret` | none | the secret that signs tokens; at least 32 bytes. Only needed if the app uses tokens |
+| `security.jwt.secret` | none | checked at startup when set (at least 32 bytes). Pass the same value to `security.NewJwt` when the app signs tokens |}
 
 ## In code
 

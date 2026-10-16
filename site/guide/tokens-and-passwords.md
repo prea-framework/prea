@@ -23,7 +23,7 @@ The hash uses argon2id, with a random salt per password. Two users with the same
 
 A token is a signed piece of data that you give the client at login. The client sends it back on every request, and you can trust what's inside because only your server can sign it.
 
-`security.Jwt[T]` creates and reads tokens that carry a value of type `T`:
+`security.NewJwt[T]` creates a signer that reads and writes tokens carrying a value of type `T`. Each `Jwt` keeps its own key, so two apps in the same process never share a secret:
 
 ```go
 type Claims struct {
@@ -31,7 +31,10 @@ type Claims struct {
 	Role   string `json:"role"`
 }
 
-var tokens security.Jwt[Claims]
+tokens, err := security.NewJwt[Claims](secret) // secret from config or the environment
+if err != nil {
+	return err // shorter than 32 bytes
+}
 
 // at login
 token, err := tokens.CreateToken(Claims{UserID: u.ID, Role: "admin"}, jwt.RegisteredClaims{
@@ -51,7 +54,7 @@ userID := claims.Payload.UserID
 
 ## The secret
 
-Tokens are signed with a secret from the configuration:
+Put the signing secret in the configuration (and keep the real value in the environment):
 
 ```yaml
 # config/application.yaml
@@ -60,9 +63,10 @@ security:
     secret: ${JWT_SECRET}
 ```
 
-- It must have **at least 32 bytes**. A shorter one stops the app at startup.
-- An app that doesn't use tokens doesn't need it. Without a secret, the app starts normally, and only creating or reading a token fails.
+- It must have **at least 32 bytes**. When the key is set, `prea.Run` checks the length at startup; `NewJwt` checks it again when you build the signer.
+- An app that doesn't use tokens doesn't need it. Without a secret, the app starts normally.
 - Keep it in the environment, never in a committed file. Generate one with `openssl rand -base64 48`.
+- Pass the secret into `NewJwt` yourself (from `config` or an env var). Preá does not keep a process-wide key.
 
 ## Protect routes
 

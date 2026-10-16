@@ -16,7 +16,7 @@ This page follows an app from `prea.Run` to the moment it stops. Knowing the ord
 2. **Set up the logs.** It applies `logging.level` and `logging.format`, or `preas.Logging` when set.
 3. **Connect to the database**, if `database.url` is set. It checks the connection right away, so a wrong address fails now and not on the first request.
 4. **Run a migration command and exit**, when started by `prea migrate`. [Migrations](./migrations#the-cli) explains this.
-5. **Set the token secret**, if `security.jwt.secret` is set. A secret shorter than 32 bytes stops the app.
+5. **Check the token secret**, if `security.jwt.secret` is set. A secret shorter than 32 bytes stops the app. The app still builds its own `security.Jwt` with `NewJwt` when it needs to sign tokens.
 6. **Create the components.** It loads every preá in `Modules`, creates their components and fills their `inject:""` and `value:""` fields. A missing dependency stops the app here.
 7. **Prepare the database.** It generates and applies migrations and checks the tables against the models, depending on the [database settings](./migrations#at-startup).
 8. **Start the components.** It calls each `Init`, dependencies first.

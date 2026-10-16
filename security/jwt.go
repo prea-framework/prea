@@ -29,32 +29,52 @@ type statusError struct {
 func (e *statusError) Error() string   { return e.msg }
 func (e *statusError) HTTPStatus() int { return e.status }
 
-// SignKey signs and checks the tokens; set it at startup with SetSignKey.
-var SignKey []byte
+// Jwt signs and checks tokens that carry a payload of type M. Each value has
+// its own key; create one with NewJwt so two apps in the same process never
+// share or overwrite a secret.
+type Jwt[M any] struct {
+	key []byte
+}
 
-// SetSignKey validates and sets SignKey; call it at startup so a short key
-// stops the app.
-func SetSignKey(key string) error {
-	SignKey = []byte(key)
-	_, err := signKey()
+// NewJwt returns a Jwt that signs with secret. The secret must have at least
+// MinKeySize bytes.
+func NewJwt[M any](secret string) (Jwt[M], error) {
+	key, err := parseKey(secret)
+	if err != nil {
+		return Jwt[M]{}, err
+	}
+	return Jwt[M]{key: key}, nil
+}
+
+// CheckSignKey validates a secret at startup without keeping it. Call it when
+// security.jwt.secret is set so a short key stops the app before it serves.
+func CheckSignKey(secret string) error {
+	_, err := parseKey(secret)
 	return err
 }
 
-func signKey() ([]byte, error) {
-	if len(SignKey) < MinKeySize {
-		return nil, fmt.Errorf("security: the jwt secret must have at least %d bytes (got %d): set security.jwt.secret", MinKeySize, len(SignKey))
+func parseKey(secret string) ([]byte, error) {
+	if len(secret) < MinKeySize {
+		return nil, fmt.Errorf("security: the jwt secret must have at least %d bytes (got %d): set security.jwt.secret", MinKeySize, len(secret))
 	}
-	return SignKey, nil
+	key := make([]byte, len(secret))
+	copy(key, secret)
+	return key, nil
 }
 
-type Jwt[M any] struct{}
+func (j Jwt[M]) signKey() ([]byte, error) {
+	if len(j.key) < MinKeySize {
+		return nil, fmt.Errorf("security: the jwt secret must have at least %d bytes (got %d): use security.NewJwt", MinKeySize, len(j.key))
+	}
+	return j.key, nil
+}
 
 type DataClaims[M any] struct {
 	Payload M `json:"payload"`
 	jwt.RegisteredClaims
 }
 
-func (Jwt[M]) CreateToken(object M, claims jwt.RegisteredClaims) (string, error) {
+func (j Jwt[M]) CreateToken(object M, claims jwt.RegisteredClaims) (string, error) {
 	token := jwt.New(jwt.GetSigningMethod(DefaultAlg))
 
 	token.Claims = &DataClaims[M]{
@@ -62,7 +82,7 @@ func (Jwt[M]) CreateToken(object M, claims jwt.RegisteredClaims) (string, error)
 		claims,
 	}
 
-	key, err := signKey()
+	key, err := j.signKey()
 	if err != nil {
 		return "", err
 	}
@@ -74,9 +94,9 @@ func (Jwt[M]) CreateToken(object M, claims jwt.RegisteredClaims) (string, error)
 	return encoded, nil
 }
 
-func (Jwt[M]) DecodeToken(token string) (DataClaims[M], error) {
+func (j Jwt[M]) DecodeToken(token string) (DataClaims[M], error) {
 	keyFunc := func(token *jwt.Token) (interface{}, error) {
-		return signKey()
+		return j.signKey()
 	}
 
 	parsed, err := jwt.ParseWithClaims(token, &DataClaims[M]{}, keyFunc, jwt.WithValidMethods([]string{DefaultAlg}))

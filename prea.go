@@ -40,7 +40,8 @@ import (
 //     shutdown_timeout, max_header_bytes and trusted_proxies, with defaults;
 //   - database.url (without it the app has no database), database.schema
 //     and database.migrations;
-//   - security.jwt.secret, applied only when set.
+//   - security.jwt.secret, checked at startup only when set (apps build
+//     security.Jwt with NewJwt using the same value).
 type Config struct {
 	Modules     []*core.Module
 	Middlewares []any
@@ -207,10 +208,11 @@ func (s *server) app(cfg Config) (core.App, error) {
 	if app.Security.TrustedProxies == nil {
 		app.Security.TrustedProxies = proxies
 	}
-	// An app without JWT needs no secret; one that uses JWT without it gets
-	// the error when it signs or checks a token.
+	// An app without JWT needs no secret; one that uses JWT builds a
+	// security.Jwt with NewJwt. When the secret is set, check it now so a
+	// short key stops the app before it serves.
 	if secret != "" {
-		if err := security.SetSignKey(secret); err != nil {
+		if err := security.CheckSignKey(secret); err != nil {
 			return app, err
 		}
 	}

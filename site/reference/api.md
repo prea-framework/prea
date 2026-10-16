@@ -9,7 +9,7 @@ Preá is a set of Go modules. A project created by `prea new` depends on the roo
 | [`…/di`](https://pkg.go.dev/github.com/prea-framework/prea/di) | the container: `Export`, `Named`, `MissingError` |
 | [`…/database`](https://pkg.go.dev/github.com/prea-framework/prea/database) | `BaseRepository`, `Prepare`, `Statement`, `Args`, `Transactional`, the errors, `Setup` and the migrations |
 | [`…/config`](https://pkg.go.dev/github.com/prea-framework/prea/config) | `Load`, `Config.Value`, `Config.Profile` |
-| [`…/security`](https://pkg.go.dev/github.com/prea-framework/prea/security) | `Jwt`, `HashPassword`, `ComparePassword`, `ErrInvalidToken`, `ErrPasswordTooLong` |
+| [`…/security`](https://pkg.go.dev/github.com/prea-framework/prea/security) | `NewJwt`, `CheckSignKey`, `HashPassword`, `ComparePassword`, `ErrInvalidToken`, `ErrPasswordTooLong` |
 | [`…/logger`](https://pkg.go.dev/github.com/prea-framework/prea/logger) | `Debug`, `Info`, `Success`, `Error`, `Configure`, `New` |
 | [`…/cmd/prea`](https://pkg.go.dev/github.com/prea-framework/prea/cmd/prea) | the CLI |
 
