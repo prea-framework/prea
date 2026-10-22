@@ -43,7 +43,7 @@ const base = "server:\n  port: 8000\n  mode: test\n"
 
 func TestRequiredKeys(t *testing.T) {
 	for yaml, want := range map[string]string{
-		"server:\n  mode: test\n":             "server.port is required: set it in config/application.yaml",
+		"server:\n  mode: test\n":             "server.port is required: set it in " + filepath.Join("config", "application.yaml"),
 		"server:\n  port: 8000\n":             "server.mode is required",
 		"":                                    "server.port is required", // no file at all
 		"server:\n  port: 8000\n  mode: prod": `server.mode "prod": use debug, release, test`,
