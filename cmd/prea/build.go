@@ -25,7 +25,7 @@ func buildCommand() *cli.Command {
 				if err != nil {
 					return err
 				}
-				args = append([]string{"-o", filepath.Join("bin", path.Base(project))}, args...)
+				args = append([]string{"-o", exe(filepath.Join("bin", path.Base(project)))}, args...)
 			}
 			return goRun(ctx, nil, append(append([]string{"build"}, args...), ".")...)
 		},

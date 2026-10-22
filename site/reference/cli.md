@@ -59,7 +59,7 @@ Builds the binary.
 prea build [go build flags]
 ```
 
-- Without `-o`, the binary goes to `bin/<last element of the module path>`.
+- Without `-o`, the binary goes to `bin/<last element of the module path>`, with `.exe` added on Windows.
 - Every flag goes to `go build`: `-o`, `-trimpath`, `-ldflags`...
 - `GOOS` and `GOARCH` come from the environment.
 

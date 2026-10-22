@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"runtime"
 	"syscall"
 
 	"github.com/urfave/cli/v3"
@@ -39,7 +40,7 @@ func runServer(ctx context.Context, cmd *cli.Command, env ...string) error {
 	}
 	defer os.RemoveAll(dir)
 
-	bin := filepath.Join(dir, "server")
+	bin := exe(filepath.Join(dir, "server"))
 	if err := buildServer(ctx, bin); err != nil {
 		return err
 	}
@@ -84,6 +85,15 @@ func forward(signals <-chan os.Signal, server *exec.Cmd) {
 		}
 		server.Process.Signal(sig)
 	}
+}
+
+// exe adds the .exe suffix Windows needs to run a binary: go build -o does
+// not add it.
+func exe(name string) string {
+	if runtime.GOOS == "windows" {
+		return name + ".exe"
+	}
+	return name
 }
 
 // buildServer builds the main package at the project root into bin.

@@ -67,7 +67,7 @@ func dev(ctx context.Context, profile string, interval time.Duration) error {
 
 	seen := sources()
 	for n := 0; ; n++ {
-		bin := filepath.Join(dir, fmt.Sprint("server-", n))
+		bin := exe(filepath.Join(dir, fmt.Sprint("server-", n)))
 		if err := buildServer(ctx, bin); err != nil {
 			fmt.Fprintln(os.Stderr, "prea dev:", err, "(the running version keeps serving)")
 		} else {
@@ -107,7 +107,9 @@ func halt(server *exec.Cmd) {
 	if server == nil || server.Process == nil {
 		return
 	}
-	server.Process.Signal(syscall.SIGTERM)
+	if err := server.Process.Signal(syscall.SIGTERM); err != nil {
+		server.Process.Kill() // Windows cannot send SIGTERM: without this Wait never returns
+	}
 	server.Wait()
 }
 

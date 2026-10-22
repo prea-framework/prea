@@ -40,6 +40,12 @@ func TestGeneratedProject(t *testing.T) {
 		}
 	}
 
+	// -race needs cgo, and a machine without a C compiler (often Windows) has none.
+	testArgs := []string{"-count=1"}
+	if out, _ := exec.Command("go", "env", "CGO_ENABLED").Output(); strings.TrimSpace(string(out)) == "1" {
+		testArgs = append(testArgs, "-race")
+	}
+
 	t.Run("minimal", func(t *testing.T) {
 		t.Chdir(t.TempDir())
 		prea("new", "shop", "--module", "example.com/shop", "--local", framework)
@@ -52,9 +58,9 @@ func TestGeneratedProject(t *testing.T) {
 		prea("g", "m", "rate_limit")
 		prea("g", "m", "request_timing", "--func")
 		gocmd("vet", "./...")
-		prea("tests", "-count=1", "-race") // the template's tests: the health preá and tests/
+		prea(append([]string{"tests"}, testArgs...)...) // the template's tests: the health preá and tests/
 		prea("build")
-		serves(t, filepath.Join("bin", "shop"))
+		serves(t, exe(filepath.Join("bin", "shop")))
 	})
 
 	t.Run("with-db", func(t *testing.T) {
@@ -73,7 +79,7 @@ func TestGeneratedProject(t *testing.T) {
 			t.Skip("PREA_TEST_DATABASE_URL not set: generated, vetted, not run")
 		}
 		t.Setenv("TEST_DATABASE_URL", url) // config/application-tests.yaml
-		prea("tests", "-count=1", "-race")
+		prea(append([]string{"tests"}, testArgs...)...)
 	})
 
 	t.Run("errors", func(t *testing.T) {
@@ -109,7 +115,11 @@ func serves(t *testing.T, bin string) {
 		t.Fatal(err)
 	}
 	defer server.Wait()
-	defer server.Process.Signal(os.Interrupt)
+	defer func() {
+		if err := server.Process.Signal(os.Interrupt); err != nil {
+			server.Process.Kill() // Windows cannot send an interrupt: Wait would never return
+		}
+	}()
 	for range 50 {
 		res, err := http.Get(fmt.Sprintf("http://127.0.0.1:%d/health", port))
 		if err == nil {
