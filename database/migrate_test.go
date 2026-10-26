@@ -319,9 +319,13 @@ type migrator struct {
 	opts Migrations
 }
 
+// gooseTable creates prea_migrations as goose kept it, up to Preá v0.0.4.
+const gooseTable = `create table prea_migrations (id serial primary key, version_id bigint not null, is_applied boolean not null, tstamp timestamp not null default now());
+`
+
 func newMigrator(t *testing.T, tables string) *migrator {
 	pool := testDB(t)
-	if _, err := pool.Exec(t.Context(), "drop table if exists prea_migrations, "+tables); err != nil {
+	if _, err := pool.Exec(t.Context(), "drop table if exists "+strings.Trim("prea_migrations, "+tables, ", ")); err != nil {
 		t.Fatal(err)
 	}
 	m := &migrator{t, pool, Migrations{Dir: filepath.Join(t.TempDir(), "migrations")}}
@@ -367,6 +371,12 @@ func (m *migrator) mustFail(want []string, args ...string) {
 			m.t.Fatalf("%v: want an error with %q, got %v", args, w, err)
 		}
 	}
+}
+
+func (m *migrator) exists(table string) bool {
+	var ok bool
+	m.pool.QueryRow(m.t.Context(), "select to_regclass($1) is not null", table).Scan(&ok)
+	return ok
 }
 
 // rows is prea_migrations as "version name", in the order they were applied.

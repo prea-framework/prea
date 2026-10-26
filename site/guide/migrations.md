@@ -28,7 +28,7 @@ alter table task drop column due_date;
 - **The name** is `<version>_<name>.sql`. Versions are semantic (`0.0.1`) by default, or timestamps (`20261013120000`) with `database.migrations.version: timestamp`. Don't mix the two in one folder.
 - **The SQL runs exactly as written**, including functions with `$$` bodies.
 - **`-- prea:down`** is optional. Below it goes the SQL that undoes the migration. Without it, `prea migrate down` refuses to undo that migration, rather than undoing half of it.
-- **`-- prea:no-transaction`**, on the first line, runs the file outside a transaction, which `create index concurrently` needs. Otherwise each migration runs in a transaction: if it fails, none of it stays, and the next ones don't run.
+- **`-- prea:no-transaction`**, on the first line, runs the file outside a transaction, which `create index concurrently` needs. Put one such statement per file: PostgreSQL runs several statements sent together in one transaction, where `concurrently` fails. Otherwise each migration runs in a transaction: if it fails, none of it stays, and the next ones don't run.
 
 ## Written from your models
 
@@ -125,7 +125,7 @@ database: the migrations in migrations/ don't match the database:
 Deleting, renaming, editing or replacing an applied migration doesn't undo it. Restore the file (e.g. git checkout); to undo the migration, run prea migrate down, then delete the file
 ```
 
-The name catches a new file that takes the version of a deleted one, which would otherwise never run. The checksum covers what ran, the part above `-- prea:down`, so you can still add or fix the down of an applied migration. Line endings and blank lines around the SQL don't count.
+The name catches a new file that takes the version of a deleted one, which would otherwise never run. The checksum covers what ran, the part above `-- prea:down`, so you can still add or fix the down of an applied migration. Line endings and blank lines around the SQL don't count; any other change does, comments included.
 
 ## Migrations only run forward
 

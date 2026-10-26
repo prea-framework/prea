@@ -94,8 +94,9 @@ func generateMigration(ctx context.Context, db *pgxpool.Pool, m Migrations, comp
 	if err != nil {
 		return err
 	}
-	defer r.close()
-	if len(r.pending()) > 0 {
+	pending := len(r.pending()) > 0
+	r.close() // diff needs a connection of its own: a pool of one would wait forever
+	if pending {
 		logger.Info("database: migrations are pending: apply them before generating one from the models")
 		return nil
 	}
@@ -284,8 +285,11 @@ func (r *runner) load(ctx context.Context, opts Migrations) error {
 		}
 		// goose kept only a number per version: 0.0.2 was 2. Take the version
 		// and name from the file; one without a file stays as the number, and
-		// check reports it.
-		rows, _ := tx.Query(ctx, "select version_id, tstamp::timestamptz from "+migrationsTable+" where version_id > 0 and is_applied order by id")
+		// check reports it. goose's CLI added a row per up and down, so only a
+		// version's last row says whether it's applied.
+		rows, _ := tx.Query(ctx, `select version_id, tstamp::timestamptz from (
+			select distinct on (version_id) version_id, tstamp, is_applied from `+migrationsTable+` order by version_id, id desc
+		) last where version_id > 0 and is_applied`)
 		type gooseRow struct {
 			Num int64
 			At  time.Time
