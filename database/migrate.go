@@ -78,7 +78,8 @@ func Setup(db *pgxpool.Pool, opts Options) func(ctx context.Context, components 
 	}
 }
 
-// generateMigration writes <next version>_models.sql with what the database
+// generateMigration writes <next version>_<name>.sql, named by
+// generatedName, with what the database
 // lacks to match the models. With migrations pending it does nothing: they
 // may already have these changes.
 func generateMigration(ctx context.Context, db *pgxpool.Pool, m Migrations, components []any) error {
@@ -121,7 +122,7 @@ func generateMigration(ctx context.Context, db *pgxpool.Pool, m Migrations, comp
 		}
 		return nil
 	}
-	path, err := writeMigration(m, migs, "models", sql)
+	path, err := writeMigration(m, migs, generatedName(changes), sql)
 	if err != nil {
 		return err
 	}
@@ -323,6 +324,39 @@ func generated(changes []change) (sql string, ok bool) {
 	return sql, true
 }
 
+// generatedName names a generated migration by the tables it creates and
+// alters: create_task_table, alter_task_table,
+// create_list_table_and_alter_task_table. Commented-out changes don't count.
+func generatedName(changes []change) string {
+	var created, altered []string
+	for _, c := range changes {
+		if c.create && !slices.Contains(created, c.table) {
+			created = append(created, c.table)
+		}
+	}
+	for _, c := range changes {
+		if hasSQL(c.up) && !slices.Contains(created, c.table) && !slices.Contains(altered, c.table) {
+			altered = append(altered, c.table)
+		}
+	}
+	var parts []string
+	for _, p := range []struct {
+		verb   string
+		tables []string
+	}{{"create", created}, {"alter", altered}} {
+		if len(p.tables) == 0 {
+			continue
+		}
+		part := p.verb + "_" + strings.Join(p.tables, "_") + "_table"
+		if len(p.tables) > 1 {
+			part += "s"
+		}
+		parts = append(parts, part)
+	}
+	name := strings.ToLower(strings.Join(parts, "_and_"))
+	return nonName.ReplaceAllString(name, "_") // app.task: app_task
+}
+
 // writeMigration creates <dir>/<next version>_<name>.sql with content.
 func writeMigration(opts Migrations, migs []migration, name, content string) (string, error) {
 	version, err := nextVersion(migs, opts.Version, time.Now())
@@ -370,6 +404,7 @@ func (m migration) String() string { return m.version + "_" + m.name }
 var (
 	migrationFile = regexp.MustCompile(`^(\d+\.\d+\.\d+|\d+)_([a-z0-9_]+)\.sql$`)
 	migrationName = regexp.MustCompile(`^[a-z0-9_]+$`)
+	nonName       = regexp.MustCompile(`[^a-z0-9_]+`)
 	downMarker    = regexp.MustCompile(`(?m)^-- prea:down[ \t]*\r?$`)
 )
 

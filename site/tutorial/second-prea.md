@@ -87,7 +87,7 @@ func (h *Handler) list(c *gin.Context) {
 
 ## Try it
 
-`prea dev` restarts and writes `migrations/0.0.2_models.sql`, with the new table, the new column and the reference:
+`prea dev` restarts and writes `migrations/0.0.2_create_list_table_and_alter_task_table.sql`, with the new table, the new column and the reference:
 
 ```sql
 create table if not exists "list" (

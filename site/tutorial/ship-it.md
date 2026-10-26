@@ -50,8 +50,8 @@ prea migrate --profile prod status
 ```
 
 ```
-0.0.1_models                             applied 2026-10-15 12:58:32
-0.0.2_models                             applied 2026-10-15 12:59:12
+0.0.1_create_task_table                  applied 2026-10-15 12:58:32
+0.0.2_create_list_table_and_alter_task_table applied 2026-10-15 12:59:12
 ```
 
 On a fresh production database, both would show `pending`, and `on_start` would apply them. If you prefer to migrate as a separate deploy step, leave `on_start` off and run `prea migrate --profile prod up` before starting the new version.
