@@ -44,7 +44,7 @@ The install script runs `go install` for you and adds Go's `bin` folder to your 
 To install a specific version, set `PREA_VERSION`:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/prea-framework/prea/main/install.sh | PREA_VERSION=v0.0.3 sh
+curl -fsSL https://raw.githubusercontent.com/prea-framework/prea/main/install.sh | PREA_VERSION=v0.0.4 sh
 ```
 
 ## Check the installation

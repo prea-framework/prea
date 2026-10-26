@@ -4,7 +4,11 @@ What each version brought. Preá is pre-alpha, and the API may change between ve
 
 Each module has its own version. The CLI and the root module follow the newest one.
 
-## Unreleased
+## v0.0.4
+
+*October 2026*
+
+Modules: `security` v0.0.3; the root module and the CLI v0.0.4.
 
 **Security**
 - Each `security.Jwt` has its own signing key. Build one with `security.NewJwt[T](secret)`; the process-wide `SignKey` and `SetSignKey` are gone, so two apps in the same process never share or overwrite a secret. `prea.Run` still checks `security.jwt.secret` at startup when it is set. *Breaking:* replace `var tokens security.Jwt[T]` with `NewJwt`.
