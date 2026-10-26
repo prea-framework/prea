@@ -3,6 +3,7 @@
 package logger
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -11,11 +12,12 @@ import (
 	"strings"
 )
 
-// Level order: Debug < Info < Success < Error.
+// Level order: Debug < Info < Success < Warn < Error.
 const (
 	LevelDebug   = slog.LevelDebug
 	LevelInfo    = slog.LevelInfo
 	LevelSuccess = slog.Level(2)
+	LevelWarn    = slog.LevelWarn
 	LevelError   = slog.LevelError
 )
 
@@ -28,7 +30,8 @@ func init() {
 }
 
 // Configure replaces Log (and slog's default) with one writing to stdout.
-// level: debug | info | success | error. format: text | json.
+// level: debug | info | success | warn | error. format: text | json.
+// Text is colored when stdout is a terminal, unless NO_COLOR is set.
 func Configure(level, format string) error {
 	l, err := ParseLevel(level)
 	if err != nil {
@@ -37,7 +40,11 @@ func Configure(level, format string) error {
 	if format != "" && format != "text" && format != "json" {
 		return fmt.Errorf("logger: invalid format %q (text or json)", format)
 	}
-	Log = New(os.Stdout, l, format == "json")
+	var w io.Writer = os.Stdout
+	if format != "json" && colorTerminal() {
+		w = colorWriter{os.Stdout}
+	}
+	Log = New(w, l, format == "json")
 	slog.SetDefault(Log)
 	return nil
 }
@@ -59,10 +66,12 @@ func ParseLevel(name string) (slog.Level, error) {
 		return LevelInfo, nil
 	case "success":
 		return LevelSuccess, nil
+	case "warn":
+		return LevelWarn, nil
 	case "error":
 		return LevelError, nil
 	}
-	return 0, fmt.Errorf("logger: invalid level %q (debug, info, success or error)", name)
+	return 0, fmt.Errorf("logger: invalid level %q (debug, info, success, warn or error)", name)
 }
 
 func levelName(_ []string, a slog.Attr) slog.Attr {
@@ -72,9 +81,53 @@ func levelName(_ []string, a slog.Attr) slog.Attr {
 	return a
 }
 
+func colorTerminal() bool {
+	if os.Getenv("NO_COLOR") != "" {
+		return false
+	}
+	fi, err := os.Stdout.Stat()
+	return err == nil && fi.Mode()&os.ModeCharDevice != 0
+}
+
+// ANSI colors of each level; the time is dimmed.
+var levelColors = map[string]string{
+	"DEBUG":   "\x1b[90m",
+	"INFO":    "\x1b[32m",
+	"SUCCESS": "\x1b[1;32m",
+	"WARN":    "\x1b[33m",
+	"ERROR":   "\x1b[31m",
+}
+
+const dim, reset = "\x1b[2m", "\x1b[0m"
+
+// colorWriter colors the time and the level of each line the text handler
+// writes, which always start with time=... level=....
+type colorWriter struct{ w io.Writer }
+
+func (c colorWriter) Write(p []byte) (int, error) {
+	line := p
+	var out []byte
+	if bytes.HasPrefix(line, []byte("time=")) {
+		end := bytes.IndexByte(line, ' ') + 1
+		out = append(append(append(out, dim...), line[:end-1]...), reset+" "...)
+		line = line[end:]
+	}
+	if level, rest, ok := bytes.Cut(line, []byte(" ")); ok && bytes.HasPrefix(level, []byte("level=")) {
+		if color, ok := levelColors[string(level[len("level="):])]; ok {
+			out = append(append(append(out, color...), level...), reset+" "...)
+			line = rest
+		}
+	}
+	if _, err := c.w.Write(append(out, line...)); err != nil {
+		return 0, err
+	}
+	return len(p), nil
+}
+
 // Args are key/value pairs: logger.Info("user created", "id", u.ID).
 
 func Debug(msg string, args ...any)   { Log.Debug(msg, args...) }
 func Info(msg string, args ...any)    { Log.Info(msg, args...) }
 func Success(msg string, args ...any) { Log.Log(context.Background(), LevelSuccess, msg, args...) }
+func Warn(msg string, args ...any)    { Log.Warn(msg, args...) }
 func Error(msg string, args ...any)   { Log.Error(msg, args...) }

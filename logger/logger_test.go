@@ -30,3 +30,19 @@ func TestLevels(t *testing.T) {
 		t.Fatal("invalid level must fail")
 	}
 }
+
+func TestColors(t *testing.T) {
+	var buf bytes.Buffer
+	Log = New(colorWriter{&buf}, LevelDebug, false)
+
+	Error("e", "level", "x")
+	Warn("w")
+	Info("i")
+
+	lines := strings.Split(strings.TrimSpace(buf.String()), "\n")
+	for i, want := range []string{"\x1b[31mlevel=ERROR\x1b[0m msg=e level=x", "\x1b[33mlevel=WARN\x1b[0m msg=w", "\x1b[32mlevel=INFO\x1b[0m msg=i"} {
+		if !strings.HasPrefix(lines[i], "\x1b[2mtime=") || !strings.HasSuffix(lines[i], want) {
+			t.Errorf("line %d: %q, want the time dimmed and ...%q", i, lines[i], want)
+		}
+	}
+}

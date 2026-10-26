@@ -13,7 +13,7 @@ server:
   # max_header_bytes: 1048576
   # trusted_proxies: []
 logging:
-  level: info # debug | info | success | error
+  level: info # debug | info | success | warn | error
   format: text # text | json
 {{- if .WithDB}}
 database:

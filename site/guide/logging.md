@@ -4,7 +4,8 @@ Logs tell you what the app is doing. Preá writes structured logs, as text on yo
 
 ::: info What you'll learn
 - How to write a log line
-- The four levels and how to pick the minimum
+- The five levels and how to pick the minimum
+- How the colors work
 - What the request log shows
 :::
 
@@ -14,6 +15,7 @@ Logs tell you what the app is doing. Preá writes structured logs, as text on yo
 logger.Debug("cache miss", "key", key)
 logger.Info("sending email", "to", user.Email)
 logger.Success("task created", "id", task.ID)
+logger.Warn("retrying the payment", "attempt", n)
 logger.Error("payment failed", "error", err)
 ```
 
@@ -25,11 +27,11 @@ time=2026-10-15T12:49:30.137-03:00 level=SUCCESS msg="task created" id=1825b008-
 
 ## Levels
 
-From the most to the least detailed: **debug < info < success < error**. The configured level is the minimum that shows up.
+From the most to the least detailed: **debug < info < success < warn < error**. The configured level is the minimum that shows up.
 
 ```yaml
 logging:
-  level: info     # debug | info | success | error
+  level: info     # debug | info | success | warn | error
   format: text    # text | json
 ```
 
@@ -40,6 +42,12 @@ The settings can also come from code, in `preas.Logging`, which takes precedence
 ```go
 var Logging = prea.Logging{Level: "debug"}
 ```
+
+## Colors
+
+In a terminal, text logs show the level in color: **debug** in gray, **info** in green, **success** in bold green, **warn** in yellow and **error** in red. The time is dimmed.
+
+Colors turn off on their own when the output isn't a terminal, like a file, a pipe or most CI runners, and in the `json` format. To turn them off in a terminal, set `NO_COLOR=1`.
 
 ## The request log
 
