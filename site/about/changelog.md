@@ -4,6 +4,17 @@ What each version brought. Preá is pre-alpha, and the API may change between ve
 
 Each module has its own version. The CLI and the root module follow the newest one.
 
+## Unreleased
+
+**Security**
+- Each `security.Jwt` has its own signing key. Build one with `security.NewJwt[T](secret)`; the process-wide `SignKey` and `SetSignKey` are gone, so two apps in the same process never share or overwrite a secret. `prea.Run` still checks `security.jwt.secret` at startup when it is set. *Breaking:* replace `var tokens security.Jwt[T]` with `NewJwt`.
+- `HashPassword` and `ComparePassword` reject passwords longer than 128 bytes with `security.ErrPasswordTooLong`, before argon2 runs, so a huge body can't burn CPU and memory.
+
+**Docs**
+- The tutorial says which settings write the migrations from the models, and what to do when none appears.
+
+**Thanks** to [@Carlinnn](https://github.com/Carlinnn) and [@MikaelDiogo](https://github.com/MikaelDiogo) for their first contributions.
+
 ## v0.0.3
 
 *October 2026*
