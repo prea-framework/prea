@@ -21,6 +21,21 @@ drop table "task";
 
 This is a **migration**: a SQL file that changes the database. In the `dev` profile, whenever a model differs from the database, Preá writes a migration with the difference and applies it. The **model** is `preas/task/model.go`, and this file is its translation to SQL.
 
+Two settings in `config/application-dev.yaml` turn this on:
+
+```yaml
+database:
+  migrations:
+    from_models: true # a model change becomes a migration at startup...
+    on_start: true # ...that is applied right away
+```
+
+`prea new --with-db` writes them for you. The base `application.yaml` leaves both off, so only `dev` writes and applies migrations. You'll see why in [chapter 7](./configuration).
+
+::: warning No migration in `migrations/`?
+If you created the project without `--with-db` and added the database by hand, these two lines are missing, and Preá writes nothing. Add them to `config/application-dev.yaml` and restart `prea dev`. To write a migration yourself, see [Migrations](../guide/migrations#write-one-yourself).
+:::
+
 ## Start the table over
 
 This migration only exists on your machine, so you can still throw it away. Stop `prea dev` with Ctrl+C, then undo it and delete it:
