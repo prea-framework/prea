@@ -8,11 +8,18 @@ Each module has its own version. The CLI and the root module follow the newest o
 
 *October 2026*
 
-Modules: `security` v0.0.3; the root module and the CLI v0.0.4.
+Modules: `security` v0.0.3, `database` v0.0.3, `logger` v0.0.2; the root module and the CLI v0.0.4.
 
 **Security**
 - Each `security.Jwt` has its own signing key. Build one with `security.NewJwt[T](secret)`; the process-wide `SignKey` and `SetSignKey` are gone, so two apps in the same process never share or overwrite a secret. `prea.Run` still checks `security.jwt.secret` at startup when it is set. *Breaking:* replace `var tokens security.Jwt[T]` with `NewJwt`.
 - `HashPassword` and `ComparePassword` reject passwords longer than 128 bytes with `security.ErrPasswordTooLong`, before argon2 runs, so a huge body can't burn CPU and memory.
+
+**Logs**
+- Text logs are colored in a terminal: debug in gray, info in green, success in bold green, warn in yellow and error in red, with the time dimmed. Files, pipes, the `json` format and `NO_COLOR=1` stay plain.
+- A new `warn` level, between success and error, with `logger.Warn`.
+
+**Database**
+- A migration written from the models is named after what it does, like `0.0.1_create_task_table.sql`, `0.0.2_alter_task_table.sql` or `0.0.2_create_list_table_and_alter_task_table.sql`, instead of `<version>_models.sql`. Migrations already written keep their names.
 
 **Docs**
 - The tutorial says which settings write the migrations from the models, and what to do when none appears.
