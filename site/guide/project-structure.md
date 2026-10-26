@@ -119,7 +119,7 @@ The settings live in YAML files. `application.yaml` is always loaded; the file o
 
 ## `migrations/`
 
-Each file is a change to the database, in plain SQL, named by version: `0.0.1_models.sql`, `0.0.2_add_due_date.sql`. In the `dev` profile, Preá writes these files for you when a model changes. [Migrations](./migrations) has the full story.
+Each file is a change to the database, in plain SQL, named by version: `0.0.1_create_task_table.sql`, `0.0.2_add_due_date.sql`. In the `dev` profile, Preá writes these files for you when a model changes. [Migrations](./migrations) has the full story.
 
 ## `tests/`
 

@@ -52,7 +52,7 @@ type Config struct {
 // Logging configures the logs. An empty field comes from logging.level or
 // logging.format in the config, then the default: info, text.
 type Logging struct {
-	Level  string `yaml:"level"`  // debug | info | success | error
+	Level  string `yaml:"level"`  // debug | info | success | warn | error
 	Format string `yaml:"format"` // text | json
 }
 

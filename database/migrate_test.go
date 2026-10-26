@@ -289,7 +289,7 @@ func TestStart(t *testing.T) {
 
 	// an empty database: the whole schema is generated, applied, then validated
 	start(opts, &BaseRepository[note]{DB: pool})
-	if got := files(); len(got) != 1 || got[0] != "0.0.1_models.sql" {
+	if got := files(); len(got) != 1 || got[0] != "0.0.1_create_notes_table.sql" {
 		t.Fatalf("generated: %v", got)
 	}
 	start(opts, &BaseRepository[note]{DB: pool})
@@ -299,7 +299,7 @@ func TestStart(t *testing.T) {
 
 	// the model changes: the next start generates and applies only the difference
 	start(opts, &BaseRepository[noteV2]{DB: pool})
-	content, _ := os.ReadFile(filepath.Join(dir, "0.0.2_models.sql"))
+	content, _ := os.ReadFile(filepath.Join(dir, "0.0.2_alter_notes_table.sql"))
 	if !strings.Contains(string(content), `alter table "notes" add column "color" text;`) ||
 		!strings.Contains(string(content), "-- prea:down\n"+`alter table "notes" drop column "color";`) {
 		t.Fatalf("0.0.2:\n%s", content)
@@ -327,6 +327,24 @@ func TestStart(t *testing.T) {
 	} {
 		if _, err := Setup(tc.db, tc.opts)(ctx, nil); err == nil || !strings.Contains(err.Error(), tc.want) {
 			t.Errorf("got %v, want %q", err, tc.want)
+		}
+	}
+}
+
+func TestGeneratedName(t *testing.T) {
+	for _, tc := range []struct {
+		changes []change
+		want    string
+	}{
+		{[]change{{table: "task", up: "create table", create: true}, {table: "task", up: "create index"}}, "create_task_table"},
+		{[]change{{table: "task", up: "alter table"}, {table: "task", up: "-- dropped column"}}, "alter_task_table"},
+		{[]change{{table: "list", up: "create table", create: true}, {table: "task", up: "alter table"}}, "create_list_table_and_alter_task_table"},
+		{[]change{{table: "list", up: "create table", create: true}, {table: "item", up: "create table", create: true}}, "create_list_item_tables"},
+		{[]change{{table: "task", up: "alter table"}, {table: "user", up: "-- only a comment"}}, "alter_task_table"},
+		{[]change{{table: "app.Task", up: "create schema"}, {table: "app.Task", up: "create table", create: true}}, "create_app_task_table"},
+	} {
+		if got := generatedName(tc.changes); got != tc.want {
+			t.Errorf("%v: got %s, want %s", tc.changes, got, tc.want)
 		}
 	}
 }

@@ -52,8 +52,8 @@ prea dev
 
 ```
 level=INFO msg="prea: config loaded" profile=dev
-level=SUCCESS msg="database: generated a migration from the models: review it before committing" file=migrations/0.0.1_models.sql
-level=INFO msg="database: applied 0.0.1_models (5ms)"
+level=SUCCESS msg="database: generated a migration from the models: review it before committing" file=migrations/0.0.1_create_item_table.sql
+level=INFO msg="database: applied 0.0.1_create_item_table (5ms)"
 level=INFO msg="prea: listening" addr=[::]:8000
 ```
 

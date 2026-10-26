@@ -7,10 +7,10 @@ require (
 	github.com/jackc/pgx/v5 v5.11.0
 	github.com/prea-framework/prea/config v0.0.2
 	github.com/prea-framework/prea/core v0.0.3
-	github.com/prea-framework/prea/database v0.0.2
+	github.com/prea-framework/prea/database v0.0.3
 	github.com/prea-framework/prea/di v0.0.3
-	github.com/prea-framework/prea/logger v0.0.1
-	github.com/prea-framework/prea/security v0.0.2
+	github.com/prea-framework/prea/logger v0.0.2
+	github.com/prea-framework/prea/security v0.0.3
 )
 
 require (

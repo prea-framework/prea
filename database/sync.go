@@ -156,10 +156,12 @@ func validate(ctx context.Context, db *pgxpool.Pool, tables []*table) error {
 // change is one difference between a model and its table: the statement
 // that brings the table to the model, and the one that undoes it.
 type change struct {
-	msg   string
-	up    string
-	down  string // "" when there's nothing to undo
-	check bool   // validate reports it; indexes and extra columns it doesn't
+	msg    string
+	up     string
+	down   string // "" when there's nothing to undo
+	check  bool   // validate reports it; indexes and extra columns it doesn't
+	table  string // the model's table, which names the generated migration
+	create bool   // creates the table
 }
 
 // diff compares every model with its table in the database.
@@ -239,7 +241,7 @@ func diffTable(t *table, cur *dbTable) []change {
 		if stmt := t.createSchema(); stmt != "" {
 			changes = append(changes, change{up: stmt})
 		}
-		changes = append(changes, change{msg: "table " + t.name + " is missing", up: t.create(), down: "drop table " + tbl, check: true})
+		changes = append(changes, change{msg: "table " + t.name + " is missing", up: t.create(), down: "drop table " + tbl, check: true, create: true})
 		cur = &dbTable{columns: map[string]dbColumn{}, indexes: map[string]bool{}}
 		for _, c := range t.columns {
 			cur.columns[c.name] = dbColumn{c.sqlType, c.size, c.nullable}
@@ -287,6 +289,9 @@ func diffTable(t *table, cur *dbTable) []change {
 		if !cur.indexes[i.name] {
 			changes = append(changes, change{msg: "index " + i.name + " is missing", up: i.sql, down: "drop index " + quoteTable(schema+i.name)})
 		}
+	}
+	for i := range changes {
+		changes[i].table = t.name
 	}
 	return changes
 }

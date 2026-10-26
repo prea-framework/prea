@@ -31,7 +31,7 @@ Durations use Go's format: `500ms`, `30s`, `2m`.
 
 | Key | Default | Values |
 |---|---|---|
-| `logging.level` | `info` | `debug`, `info`, `success`, `error` |
+| `logging.level` | `info` | `debug`, `info`, `success`, `warn`, `error` |
 | `logging.format` | `text` | `text`, `json` |
 
 `preas.Logging` in code wins over both.

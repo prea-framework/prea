@@ -19,8 +19,8 @@ preá "task" created at preas/task and registered in preas/preas.go
 `prea dev` notices the new files and restarts:
 
 ```
-level=SUCCESS msg="database: generated a migration from the models: review it before committing" file=migrations/0.0.1_models.sql
-level=INFO msg="database: applied 0.0.1_models (3ms)"
+level=SUCCESS msg="database: generated a migration from the models: review it before committing" file=migrations/0.0.1_create_task_table.sql
+level=INFO msg="database: applied 0.0.1_create_task_table (3ms)"
 level=INFO msg="prea: listening" addr=[::]:8000
 ```
 
