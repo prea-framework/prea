@@ -28,7 +28,7 @@ alter table task drop column due_date;
 - **The name** is `<version>_<name>.sql`. Versions are semantic (`0.0.1`) by default, or timestamps (`20261013120000`) with `database.migrations.version: timestamp`. Don't mix the two in one folder.
 - **The SQL runs exactly as written**, including functions with `$$` bodies.
 - **`-- prea:down`** is optional. Below it goes the SQL that undoes the migration. Without it, `prea migrate down` refuses to undo that migration, rather than undoing half of it.
-- **`-- prea:no-transaction`**, on the first line, runs the file outside a transaction, which `create index concurrently` needs. Otherwise each migration runs in a transaction: if it fails, none of it stays, and the next ones don't run.
+- **`-- prea:no-transaction`**, on the first line, runs the file outside a transaction, which `create index concurrently` needs. Put one such statement per file: PostgreSQL runs several statements sent together in one transaction, where `concurrently` fails. Otherwise each migration runs in a transaction: if it fails, none of it stays, and the next ones don't run.
 
 ## Written from your models
 
@@ -82,7 +82,7 @@ created migrations/0.0.3_backfill_titles.sql
 |---|---|
 | `prea migrate up` | applies every pending migration |
 | `prea migrate up 0.0.2` | applies the pending ones up to that version |
-| `prea migrate down` | undoes the last applied migration (`down 3`: the last three) |
+| `prea migrate down` | undoes the applied migration with the highest version (`down 3`: the three highest) |
 | `prea migrate status` | lists each migration as applied, with the date, or pending |
 | `prea migrate validate` | checks the files without running them, for CI |
 | `prea migrate create <name>` | creates the next empty migration |
@@ -104,7 +104,49 @@ When the app starts, the database steps run in this order:
 2. **`on_start`** applies the pending migrations.
 3. **`schema`** checks or changes the tables, as [Models & schema](./models#the-schema-setting) describes.
 
-Preá keeps track of the applied migrations in the `prea_migrations` table. An advisory lock keeps two instances from migrating at the same time, so starting several copies of the app at once is safe. A pending migration with an older version than the last applied one, which happens after merging two branches, runs too.
+Preá keeps track of the applied migrations in the `prea_migrations` table, one row each:
+
+| version | name | checksum | applied_at |
+|---|---|---|---|
+| `0.0.1` | `create_task_table` | `d9c7076a…` | `2026-10-26 19:59:50+00` |
+| `0.0.2` | `alter_task_table` | `44091f9a…` | `2026-10-26 20:12:03+00` |
+
+The version is written as in the file name, and `prea migrate down` deletes the row of the migration it undoes. An advisory lock keeps two instances from migrating at the same time, so starting several copies of the app at once is safe.
+
+## Applied migrations don't change
+
+Deleting, renaming or editing a migration file doesn't undo what it did to the database. So before migrating, Preá checks each row of `prea_migrations` against the file with its version, and stops the app, and `prea migrate`, if the file is missing, has another name or its SQL changed:
+
+```
+database: the migrations in migrations/ don't match the database:
+  0.0.2_alter_task_table: applied, but its file is missing
+  0.0.3_create_list_table: applied, but its version is now 0.0.3_add_due_date.sql
+  0.0.4_create_tag_table: applied, but its SQL changed since
+Deleting, renaming, editing or replacing an applied migration doesn't undo it. Restore the file (e.g. git checkout); to undo the migration, run prea migrate down, then delete the file
+```
+
+The name catches a new file that takes the version of a deleted one, which would otherwise never run. The checksum covers what ran, the part above `-- prea:down`, so you can still add or fix the down of an applied migration. Line endings and blank lines around the SQL don't count; any other change does, comments included.
+
+## Migrations only run forward
+
+A new migration must have a version above the highest one applied. If a pending migration is older, which happens after merging two branches that each added one, Preá stops the app and `prea migrate` instead of running it out of order:
+
+```
+database: the migrations in migrations/ don't match the database:
+  0.0.2_add_due_date: pending, but older than the last applied migration, 0.0.3_create_list_table
+Migrations only run forward: give the pending one a version above 0.0.3
+```
+
+Rename the file to the next free version, like `0.0.4_add_due_date.sql`, and start again. For the same reason, `prea migrate down` undoes from the highest version, so whatever it leaves pending stays above what's applied.
+
+## Change an applied migration
+
+To change an applied migration, undo it first:
+
+```bash
+prea migrate down
+# edit or delete the file
+```
 
 ## In production
 

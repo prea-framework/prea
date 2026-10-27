@@ -4,6 +4,14 @@ What each version brought. Preá is pre-alpha, and the API may change between ve
 
 Each module has its own version. The CLI and the root module follow the newest one.
 
+## Unreleased
+
+**Database**
+- `prea_migrations` keeps each applied migration's version as written (`0.0.1`, not `1`), its name, a checksum of its SQL and when it ran. The first run converts the table of earlier versions, taking the names from the files.
+- An applied migration whose file was deleted, renamed, edited or replaced stops the app and `prea migrate`, with the list of what doesn't match. Before, Preá ignored it, and a new file that took the version of a deleted one never ran. The checksum covers what ran, the part above `-- prea:down`.
+- Migrations only run forward: a pending migration older than the highest applied version, as after merging two branches, stops the app and `prea migrate` until it gets a higher version. Before, it ran out of order. `prea migrate down` undoes from the highest version.
+- The migrations run on pgx directly, without goose.
+
 ## v0.0.4
 
 *October 2026*

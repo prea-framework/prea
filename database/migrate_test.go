@@ -1,14 +1,18 @@
 package database
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -120,105 +124,62 @@ func TestNextVersion(t *testing.T) {
 	}
 }
 
-func TestGooseFormat(t *testing.T) {
-	m := migration{up: "create function f() returns int as $$ select 1; $$ language sql;", down: "drop function f;", noTx: true}
-	want := `-- +goose NO TRANSACTION
--- +goose Up
--- +goose StatementBegin
-create function f() returns int as $$ select 1; $$ language sql;
--- +goose StatementEnd
--- +goose Down
--- +goose StatementBegin
-drop function f;
--- +goose StatementEnd
-`
-	if got := string(m.goose()); got != want {
-		t.Fatalf("got\n%s", got)
-	}
-	if got := string(migration{up: "select 1;"}.goose()); strings.Contains(got, "Down") || strings.Contains(got, "NO TRANSACTION") {
-		t.Fatalf("no down, in a transaction: %s", got)
-	}
-}
-
 func TestMigrateCommands(t *testing.T) {
+	m := newMigrator(t, "mig_a, mig_b, mig_c; drop function if exists mig_f")
 	ctx := t.Context()
-	pool := testDB(t)
-	if _, err := pool.Exec(ctx, "drop table if exists prea_migrations, mig_a, mig_b, mig_c; drop function if exists mig_f"); err != nil {
-		t.Fatal(err)
-	}
-	opts := Migrations{Dir: filepath.Join(t.TempDir(), "migrations")}
-	run := func(args ...string) (string, error) {
-		var out strings.Builder
-		err := Command(ctx, pool, opts, args, &out)
-		return out.String(), err
-	}
-	mustRun := func(args ...string) string {
-		t.Helper()
-		out, err := run(args...)
-		if err != nil {
-			t.Fatalf("%v: %v", args, err)
-		}
-		return out
-	}
-	write := func(file, content string) {
-		t.Helper()
-		if err := os.WriteFile(filepath.Join(opts.Dir, file), []byte(content), 0o644); err != nil {
-			t.Fatal(err)
-		}
-	}
 	tableExists := func(name string) bool {
 		var ok bool
-		pool.QueryRow(ctx, "select to_regclass($1) is not null", name).Scan(&ok)
+		m.pool.QueryRow(ctx, "select to_regclass($1) is not null", name).Scan(&ok)
 		return ok
 	}
 
-	if out := mustRun("status"); !strings.Contains(out, "no migrations") {
+	if out := m.mustRun("status"); !strings.Contains(out, "no migrations") {
 		t.Fatalf("empty dir: %q", out)
 	}
-	if out := mustRun("create", "a"); !strings.Contains(out, "0.0.1_a.sql") {
+	if out := m.mustRun("create", "a"); !strings.Contains(out, "0.0.1_a.sql") {
 		t.Fatalf("create: %q", out)
 	}
-	if _, err := run("status"); err == nil || !strings.Contains(err.Error(), "0.0.1_a.sql: nothing to run") {
+	if _, err := m.run("status"); err == nil || !strings.Contains(err.Error(), "0.0.1_a.sql: nothing to run") {
 		t.Fatalf("a created file must be filled in: %v", err)
 	}
 	// the whole file runs as written: several statements and a $$ body
-	write("0.0.1_a.sql", `create table mig_a (id int);
+	m.write("0.0.1_a.sql", `create table mig_a (id int);
 create function mig_f() returns int as $$ select 1; $$ language sql;
 -- prea:down
 drop function mig_f;
 drop table mig_a;
 `)
-	mustRun("create", "b")
-	write("0.0.2_b.sql", "create table mig_b (id int);")
+	m.mustRun("create", "b")
+	m.write("0.0.2_b.sql", "create table mig_b (id int);")
 
-	if out := mustRun("validate"); out != "migrations ok: 2\n" {
+	if out := m.mustRun("validate"); out != "migrations ok: 2\n" {
 		t.Fatalf("validate: %q", out)
 	}
-	if out := mustRun("up", "0.0.1"); !strings.Contains(out, "applied 0.0.1_a") || strings.Contains(out, "0.0.2") {
+	if out := m.mustRun("up", "0.0.1"); !strings.Contains(out, "applied 0.0.1_a") || strings.Contains(out, "0.0.2") {
 		t.Fatalf("up to a version: %q", out)
 	}
-	if out := mustRun("status"); !strings.Contains(out, "0.0.1_a") || !strings.Contains(out, "applied 2") || !strings.Contains(out, "0.0.2_b") || !strings.Contains(out, "pending") {
+	if out := m.mustRun("status"); !strings.Contains(out, "0.0.1_a") || !strings.Contains(out, "applied 2") || !strings.Contains(out, "0.0.2_b") || !strings.Contains(out, "pending") {
 		t.Fatalf("status: %q", out)
 	}
-	if out := mustRun("up"); !strings.Contains(out, "applied 0.0.2_b") {
+	if out := m.mustRun("up"); !strings.Contains(out, "applied 0.0.2_b") {
 		t.Fatalf("up: %q", out)
 	}
-	if out := mustRun("up"); out != "no pending migrations\n" {
+	if out := m.mustRun("up"); out != "no pending migrations\n" {
 		t.Fatalf("up again: %q", out)
 	}
 
-	if _, err := run("down"); err == nil || !strings.Contains(err.Error(), "0.0.2_b has no -- prea:down section") || !tableExists("mig_b") {
+	if _, err := m.run("down"); err == nil || !strings.Contains(err.Error(), "0.0.2_b has no -- prea:down section") || !tableExists("mig_b") {
 		t.Fatalf("down without a section must refuse and keep the table: %v", err)
 	}
-	write("0.0.2_b.sql", "create table mig_b (id int);\n-- prea:down\ndrop table mig_b;")
-	if out := mustRun("down", "2"); !strings.Contains(out, "undid 0.0.2_b") || !strings.Contains(out, "undid 0.0.1_a") || tableExists("mig_a") || tableExists("mig_b") {
+	m.write("0.0.2_b.sql", "create table mig_b (id int);\n-- prea:down\ndrop table mig_b;")
+	if out := m.mustRun("down", "2"); !strings.Contains(out, "undid 0.0.2_b") || !strings.Contains(out, "undid 0.0.1_a") || tableExists("mig_a") || tableExists("mig_b") {
 		t.Fatalf("down 2: %q", out)
 	}
 
 	// a failing migration is rolled back and stops the ones after it
-	write("0.0.3_c.sql", "create table mig_c (id int);\nselect 1/0;")
-	write("0.0.4_d.sql", "select 1;")
-	out, err := run("up")
+	m.write("0.0.3_c.sql", "create table mig_c (id int);\nselect 1/0;")
+	m.write("0.0.4_d.sql", "select 1;")
+	out, err := m.run("up")
 	if err == nil || !strings.Contains(err.Error(), "migration 0.0.3_c") || !strings.Contains(err.Error(), "division by zero") || tableExists("mig_c") {
 		t.Fatalf("failing migration: %v", err)
 	}
@@ -226,23 +187,24 @@ drop table mig_a;
 		t.Fatalf("the ones before it stay applied: %q", out)
 	}
 
-	// two instances starting together apply each migration once (advisory lock)
-	write("0.0.3_c.sql", "create table mig_c (id int);")
+	// two instances starting together apply each migration once (advisory
+	// lock); the sleep makes them overlap
+	m.write("0.0.3_c.sql", "select pg_sleep(0.3);\ncreate table mig_c (id int);")
 	errs := make(chan error, 2)
 	for range 2 {
-		go func() { _, err := run("up"); errs <- err }()
+		go func() { _, err := m.run("up"); errs <- err }()
 	}
 	if err := errors.Join(<-errs, <-errs); err != nil {
 		t.Fatal(err)
 	}
 	var n int
-	pool.QueryRow(ctx, "select count(*) from prea_migrations where version_id > 0").Scan(&n)
+	m.pool.QueryRow(ctx, "select count(*) from prea_migrations").Scan(&n)
 	if n != 4 {
 		t.Fatalf("every migration once: %d rows", n)
 	}
 
 	for _, args := range [][]string{{}, {"create"}, {"create", "Bad-Name"}, {"down", "zero"}, {"up", "9.9.9"}, {"fly"}} {
-		if _, err := run(args...); err == nil {
+		if _, err := m.run(args...); err == nil {
 			t.Errorf("%v must fail", args)
 		}
 	}
@@ -346,5 +308,293 @@ func TestGeneratedName(t *testing.T) {
 		if got := generatedName(tc.changes); got != tc.want {
 			t.Errorf("%v: got %s, want %s", tc.changes, got, tc.want)
 		}
+	}
+}
+
+// migrator runs migrations on a clean database and a temp dir, for the tests
+// below.
+type migrator struct {
+	t    *testing.T
+	pool *pgxpool.Pool
+	opts Migrations
+}
+
+// gooseTable creates prea_migrations as goose kept it, up to Preá v0.0.4.
+const gooseTable = `create table prea_migrations (id serial primary key, version_id bigint not null, is_applied boolean not null, tstamp timestamp not null default now());
+`
+
+func newMigrator(t *testing.T, tables string) *migrator {
+	pool := testDB(t)
+	if _, err := pool.Exec(t.Context(), "drop table if exists "+strings.Trim("prea_migrations, "+tables, ", ")); err != nil {
+		t.Fatal(err)
+	}
+	m := &migrator{t, pool, Migrations{Dir: filepath.Join(t.TempDir(), "migrations")}}
+	os.MkdirAll(m.opts.Dir, 0o755)
+	return m
+}
+
+func (m *migrator) write(file, content string) {
+	m.t.Helper()
+	if err := os.WriteFile(filepath.Join(m.opts.Dir, file), []byte(content), 0o644); err != nil {
+		m.t.Fatal(err)
+	}
+}
+
+func (m *migrator) remove(file string) {
+	m.t.Helper()
+	if err := os.Remove(filepath.Join(m.opts.Dir, file)); err != nil {
+		m.t.Fatal(err)
+	}
+}
+
+func (m *migrator) run(args ...string) (string, error) {
+	var out strings.Builder
+	err := Command(m.t.Context(), m.pool, m.opts, args, &out)
+	return out.String(), err
+}
+
+func (m *migrator) mustRun(args ...string) string {
+	m.t.Helper()
+	out, err := m.run(args...)
+	if err != nil {
+		m.t.Fatalf("%v: %v", args, err)
+	}
+	return out
+}
+
+// mustFail runs args and wants an error with each of want.
+func (m *migrator) mustFail(want []string, args ...string) {
+	m.t.Helper()
+	_, err := m.run(args...)
+	for _, w := range want {
+		if err == nil || !strings.Contains(err.Error(), w) {
+			m.t.Fatalf("%v: want an error with %q, got %v", args, w, err)
+		}
+	}
+}
+
+func (m *migrator) exists(table string) bool {
+	var ok bool
+	m.pool.QueryRow(m.t.Context(), "select to_regclass($1) is not null", table).Scan(&ok)
+	return ok
+}
+
+// rows is prea_migrations as "version name", in the order they were applied.
+func (m *migrator) rows() []string {
+	m.t.Helper()
+	rows, _ := m.pool.Query(m.t.Context(), "select version || ' ' || name from prea_migrations order by applied_at, length(version), version")
+	got, err := pgx.CollectRows(rows, pgx.RowTo[string])
+	if err != nil {
+		m.t.Fatal(err)
+	}
+	return got
+}
+
+func TestMigrationsTable(t *testing.T) {
+	m := newMigrator(t, "mig_x, mig_y")
+	m.write("0.0.1_create_x.sql", "create table mig_x (id int);")
+	m.write("0.0.2_create_y.sql", "create table mig_y (id int);")
+	m.mustRun("up")
+
+	// the version as written, the name, the checksum of the up and the time
+	var version, name, checksum string
+	var at time.Time
+	if err := m.pool.QueryRow(t.Context(), "select version, name, checksum, applied_at from prea_migrations where version = '0.0.2'").Scan(&version, &name, &checksum, &at); err != nil {
+		t.Fatal(err)
+	}
+	want := sha256.Sum256([]byte("create table mig_y (id int);"))
+	if version != "0.0.2" || name != "create_y" || checksum != hex.EncodeToString(want[:]) || time.Since(at) > time.Minute {
+		t.Fatalf("row: %q %q %q %v", version, name, checksum, at)
+	}
+	var typ string
+	m.pool.QueryRow(t.Context(), "select data_type from information_schema.columns where table_name = 'prea_migrations' and column_name = 'version'").Scan(&typ)
+	if typ != "text" {
+		t.Fatalf("version is %s, want text", typ)
+	}
+}
+
+func TestMigrationsTimestampVersions(t *testing.T) {
+	m := newMigrator(t, "mig_x")
+	m.opts.Version = "timestamp"
+	m.write("20261013120000_create_x.sql", "create table mig_x (id int);")
+	m.mustRun("up")
+	if got := m.rows(); !slices.Equal(got, []string{"20261013120000 create_x"}) {
+		t.Fatalf("rows: %v", got)
+	}
+	m.remove("20261013120000_create_x.sql")
+	m.mustFail([]string{"20261013120000_create_x: applied, but its file is missing"}, "status")
+}
+
+// Deleting, renaming, editing or replacing an applied migration doesn't undo
+// it, so every command, and the startup, stops until the file is back.
+func TestAppliedMigrationsMatchFiles(t *testing.T) {
+	m := newMigrator(t, "mig_x, mig_y, mig_z")
+	y := "create table mig_y (\n\tid int\n);\n-- prea:down\ndrop table mig_y;\n"
+	m.write("0.0.1_create_x.sql", "create table mig_x (id int);")
+	m.write("0.0.2_create_y.sql", y)
+	m.mustRun("up")
+
+	// deleted: every command stops, create too (it would take 0.0.2 again)
+	m.remove("0.0.2_create_y.sql")
+	missing := []string{"0.0.2_create_y: applied, but its file is missing", "Restore the file"}
+	for _, args := range [][]string{{"up"}, {"down"}, {"status"}, {"create", "z"}} {
+		m.mustFail(missing, args...)
+	}
+	if _, err := os.Stat(filepath.Join(m.opts.Dir, "0.0.2_z.sql")); err == nil {
+		t.Fatal("create must not write a file")
+	}
+	for _, opts := range []Migrations{{Dir: m.opts.Dir, FromModels: true}, {Dir: m.opts.Dir, OnStart: true}} {
+		if _, err := Setup(m.pool, Options{Migrations: opts})(t.Context(), nil); err == nil || !strings.Contains(err.Error(), missing[0]) {
+			t.Fatalf("startup %+v: %v", opts, err)
+		}
+	}
+	m.remove("0.0.1_create_x.sql") // every file deleted
+	m.mustFail([]string{"0.0.1_create_x: applied, but its file is missing", "0.0.2_create_y: applied"}, "up")
+
+	// replaced: a new file takes the applied version
+	m.write("0.0.1_create_x.sql", "create table mig_x (id int);")
+	m.write("0.0.2_create_z.sql", "create table mig_z (id int);")
+	m.mustFail([]string{"0.0.2_create_y: applied, but its version is now 0.0.2_create_z.sql"}, "up")
+	m.remove("0.0.2_create_z.sql")
+
+	// renamed, same SQL
+	m.write("0.0.2_make_y.sql", y)
+	m.mustFail([]string{"0.0.2_create_y: applied, but its version is now 0.0.2_make_y.sql"}, "up")
+	m.remove("0.0.2_make_y.sql")
+
+	// edited up
+	m.write("0.0.2_create_y.sql", "create table mig_y (id bigint);\n-- prea:down\ndrop table mig_y;\n")
+	m.mustFail([]string{"0.0.2_create_y: applied, but its SQL changed since"}, "up")
+
+	// restored with Windows line endings and a blank line: the same SQL
+	m.write("0.0.2_create_y.sql", "\r\n"+strings.ReplaceAll(y, "\n", "\r\n"))
+	m.mustRun("status")
+
+	// the down can change: it hasn't run
+	m.write("0.0.2_create_y.sql", "create table mig_y (\n\tid int\n);\n-- prea:down\ndrop table if exists mig_y;\n")
+	m.mustRun("up")
+
+	// undone, the file can change or go: its row is gone
+	if out := m.mustRun("down"); !strings.Contains(out, "undid 0.0.2_create_y") {
+		t.Fatalf("down: %q", out)
+	}
+	if got := m.rows(); !slices.Equal(got, []string{"0.0.1 create_x"}) {
+		t.Fatalf("after down: %v", got)
+	}
+	m.remove("0.0.2_create_y.sql")
+	m.write("0.0.2_create_z.sql", "create table mig_z (id int);")
+	if out := m.mustRun("up"); !strings.Contains(out, "applied 0.0.2_create_z") {
+		t.Fatalf("a new 0.0.2: %q", out)
+	}
+}
+
+// Migrations only run forward: a pending one older than the highest applied
+// version, as after merging two branches, stops every command and the
+// startup until it gets a higher version; down undoes from the highest.
+func TestMigrationsForwardOnly(t *testing.T) {
+	m := newMigrator(t, "mig_x, mig_y, mig_z")
+	m.write("0.0.1_create_x.sql", "create table mig_x (id int);\n-- prea:down\ndrop table mig_x;")
+	m.write("0.0.3_create_z.sql", "create table mig_z (id int);\n-- prea:down\ndrop table mig_z;")
+	m.mustRun("up")
+
+	m.write("0.0.2_create_y.sql", "create table mig_y (id int);\n-- prea:down\ndrop table mig_y;")
+	older := []string{"0.0.2_create_y: pending, but older than the last applied migration, 0.0.3_create_z", "a version above 0.0.3"}
+	for _, args := range [][]string{{"up"}, {"up", "0.0.2"}, {"status"}, {"down"}, {"create", "w"}} {
+		m.mustFail(older, args...)
+	}
+	if _, err := Setup(m.pool, Options{Migrations: Migrations{Dir: m.opts.Dir, OnStart: true}})(t.Context(), nil); err == nil || !strings.Contains(err.Error(), older[0]) {
+		t.Fatalf("startup: %v", err)
+	}
+	var y bool
+	m.pool.QueryRow(t.Context(), "select to_regclass('mig_y') is not null").Scan(&y)
+	if y {
+		t.Fatal("0.0.2 must not run")
+	}
+
+	// a higher version runs
+	m.remove("0.0.2_create_y.sql")
+	m.write("0.0.4_create_y.sql", "create table mig_y (id int);\n-- prea:down\ndrop table mig_y;")
+	if out := m.mustRun("up"); !strings.Contains(out, "applied 0.0.4_create_y") {
+		t.Fatalf("up: %q", out)
+	}
+
+	// down from the highest version: what's left pending stays above
+	if out := m.mustRun("down", "2"); !strings.Contains(out, "undid 0.0.4_create_y") || !strings.Contains(out, "undid 0.0.3_create_z") {
+		t.Fatalf("down 2: %q", out)
+	}
+	m.mustRun("status")
+}
+
+// goose allowed migrations out of order, so a converted database can have
+// 0.0.3 applied before 0.0.2: down still undoes the highest version, and
+// nothing is left pending below an applied one.
+func TestMigrationsFromGooseOutOfOrder(t *testing.T) {
+	m := newMigrator(t, "mig_x, mig_y, mig_z")
+	if _, err := m.pool.Exec(t.Context(), `create table prea_migrations (id serial primary key, version_id bigint not null, is_applied boolean not null, tstamp timestamp not null default now());
+		insert into prea_migrations (version_id, is_applied, tstamp) values (0, true, now()), (1, true, now()), (3, true, now() + interval '1 second'), (2, true, now() + interval '2 seconds');
+		create table mig_x (id int); create table mig_y (id int); create table mig_z (id int)`); err != nil {
+		t.Fatal(err)
+	}
+	m.write("0.0.1_create_x.sql", "create table mig_x (id int);\n-- prea:down\ndrop table mig_x;")
+	m.write("0.0.2_create_y.sql", "create table mig_y (id int);\n-- prea:down\ndrop table mig_y;")
+	m.write("0.0.3_create_z.sql", "create table mig_z (id int);\n-- prea:down\ndrop table mig_z;")
+	if out := m.mustRun("down"); !strings.Contains(out, "undid 0.0.3_create_z") {
+		t.Fatalf("down: %q", out)
+	}
+	if out := m.mustRun("status"); !strings.Contains(out, "0.0.3_create_z") || !strings.Contains(out, "pending") {
+		t.Fatalf("status: %q", out)
+	}
+}
+
+func TestMigrationNoTransaction(t *testing.T) {
+	m := newMigrator(t, "mig_x")
+	m.write("0.0.1_create_x.sql", "create table mig_x (id int);")
+	m.write("0.0.2_index_x.sql", "-- prea:no-transaction\ncreate index concurrently mig_x_id on mig_x (id);\n-- prea:down\ndrop index concurrently mig_x_id;")
+	m.mustRun("up")
+	m.mustRun("down")
+	if got := m.rows(); !slices.Equal(got, []string{"0.0.1 create_x"}) {
+		t.Fatalf("rows: %v", got)
+	}
+}
+
+// Databases migrated by v0.0.4 and before have goose's prea_migrations, with
+// a number per version. The first run converts it, taking the names from the
+// files; a version without a file is reported.
+func TestMigrationsFromGoose(t *testing.T) {
+	m := newMigrator(t, "mig_x")
+	ctx := t.Context()
+	if _, err := m.pool.Exec(ctx, `create table prea_migrations (id serial primary key, version_id bigint not null, is_applied boolean not null, tstamp timestamp not null default now());
+		insert into prea_migrations (version_id, is_applied) values (0, true), (1, true), (2, true);
+		create table mig_x (id int)`); err != nil {
+		t.Fatal(err)
+	}
+	m.write("0.0.1_create_x.sql", "create table mig_x (id int);")
+	m.write("0.0.2_alter_x.sql", "alter table mig_x add column name text;")
+	m.write("0.0.3_alter_x_again.sql", "alter table mig_x add column note text;")
+	if out := m.mustRun("up"); !strings.Contains(out, "applied 0.0.3_alter_x_again") || strings.Contains(out, "0.0.2") {
+		t.Fatalf("only 0.0.3 is pending: %q", out)
+	}
+	if got := m.rows(); !slices.Equal(got, []string{"0.0.1 create_x", "0.0.2 alter_x", "0.0.3 alter_x_again"}) {
+		t.Fatalf("converted rows: %v", got)
+	}
+
+	// a goose version without a file
+	m.pool.Exec(ctx, `drop table prea_migrations; create table prea_migrations (id serial primary key, version_id bigint not null, is_applied boolean not null, tstamp timestamp not null default now());
+		insert into prea_migrations (version_id, is_applied) values (0, true), (1, true), (7, true)`)
+	m.mustFail([]string{"0.0.7: applied, but its file is missing"}, "status")
+	m.mustFail([]string{"0.0.7: applied, but its file is missing"}, "status") // converted once, still reported
+
+	// down undoes the highest version first, by number (0.0.10 after 0.0.9),
+	// not as text
+	m.pool.Exec(ctx, `drop table prea_migrations, mig_x; create table prea_migrations (id serial primary key, version_id bigint not null, is_applied boolean not null, tstamp timestamp not null default now());
+		insert into prea_migrations (version_id, is_applied) values (0, true), (9, true), (10, true);
+		create table mig_x (id int, name text)`)
+	for _, f := range []string{"0.0.1_create_x.sql", "0.0.2_alter_x.sql", "0.0.3_alter_x_again.sql"} {
+		m.remove(f)
+	}
+	m.write("0.0.9_create_x.sql", "create table mig_x (id int);\n-- prea:down\ndrop table mig_x;")
+	m.write("0.0.10_alter_x.sql", "alter table mig_x add column name text;\n-- prea:down\nalter table mig_x drop column name;")
+	if out := m.mustRun("down"); !strings.Contains(out, "undid 0.0.10_alter_x") {
+		t.Fatalf("down: %q", out)
 	}
 }
