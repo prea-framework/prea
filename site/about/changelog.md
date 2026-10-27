@@ -4,7 +4,11 @@ What each version brought. Preá is pre-alpha, and the API may change between ve
 
 Each module has its own version. The CLI and the root module follow the newest one.
 
-## Unreleased
+## v0.0.5
+
+*October 2026*
+
+Modules: `database` v0.0.4; the root module and the CLI v0.0.5.
 
 **Database**
 - `prea_migrations` keeps each applied migration's version as written (`0.0.1`, not `1`), its name, a checksum of its SQL and when it ran. The first run converts the table of earlier versions, taking the names from the files.
